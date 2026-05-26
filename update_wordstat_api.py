@@ -12,9 +12,10 @@ import certifi
 #https://habr.com/ru/companies/ruvds/articles/440654/ - about argparse
 import argparse
 
-ENV_FILE = Path("/Users/macbook/Desktop/pythonProject/.env")
+BASE_DIR = Path(__file__).resolve().parent
+ENV_FILE = BASE_DIR / ".env"
 WORDSTAT_BASE_URL = "https://api.wordstat.yandex.net"
-log_file = Path("/Users/macbook/Desktop/pythonProject/update_wordstat.log")
+log_file = BASE_DIR / "update_wordstat.log"
 
 #add string in the log file to see when did our scrip start and stop
 def log(message):

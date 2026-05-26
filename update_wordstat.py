@@ -5,9 +5,11 @@ import io
 import shutil #to find the path to the clickhouse executable file in the system.
 import subprocess
 
-top_csv = Path("/Users/macbook/Desktop/pythonProject/wordstat_top_queries.csv")
-dyn_csv = Path("/Users/macbook/Desktop/pythonProject/wordstat_dynamic.csv")
-log_file = Path("/Users/macbook/Desktop/pythonProject/update_wordstat.log")
+BASE_DIR = Path(__file__).resolve().parent
+
+top_csv = BASE_DIR / "wordstat_top_queries.csv"
+dyn_csv = BASE_DIR / "wordstat_dynamic.csv"
+log_file = BASE_DIR / "update_wordstat.log"
 
 #add string in the log file to see when did our scrip start and stop
 def log(message):

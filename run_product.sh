@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PY="/opt/miniconda3/envs/wordstat/bin/python"
-DIR="/Users/macbook/Desktop/pythonProject"
+DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PRODUCT="${1:?Usage: run_product.sh 'товар' [n_months]}"
 N_MONTHS="${2:-24}"

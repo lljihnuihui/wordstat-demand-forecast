@@ -22,6 +22,25 @@ ARGS = parse_args()
 PRODUCT = ARGS.product
 PRODUCT_SQL = sql_quote(PRODUCT)
 
+#https://robjhyndman.com/hyndsight/wape.html(wape + mase)
+def wape(y_true, y_pred):
+    denominator = np.sum(np.abs(y_true))
+    if denominator == 0:
+        return 0.0
+    return float(np.sum(np.abs(y_true - y_pred)) / denominator * 100)
+
+def mase(y_true, y_pred, y_insample, seasonality=1):
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    y_insample = np.asarray(y_insample, dtype=float)
+
+    scale = np.mean(np.abs(y_insample[seasonality:] - y_insample[:-seasonality]))
+    if scale == 0:
+        return float("nan")
+
+    return float(np.mean(np.abs(y_true - y_pred)) / scale)
+
+
 # find the path to the clickhouse
 def ch():
     return shutil.which('clickhouse')
@@ -106,8 +125,52 @@ model = Pipeline([
 
 print("train feature count:", X_train.shape[1])
 model.fit(X_train, y_train_log)
-score = model.score(X_train, y_train_log)
-print("train score:", score)
+
+# validate on last 6 points of feature dataset
+VAL = 6
+split = len(X_train) - VAL
+X_tr, X_val = X_train[:split], X_train[split:]
+y_tr, y_val = y_train[:split], y_train[split:]
+
+# retrain MLP on train-only for fair validation
+model.fit(X_tr, np.log1p(y_tr))
+pred_mlp = np.expm1(model.predict(X_val))
+pred_mlp = np.maximum(pred_mlp, 0.0)
+
+# seasonal naive baseline (same month last year)
+val_orig_idx = np.arange(LAGS + split, LAGS + len(X_train))
+base_pred = []
+for idx in val_orig_idx:
+    base_pred.append(y[idx - 12] if idx >= 12 else y[idx - 1])
+base_pred = np.array(base_pred, dtype=float)
+w_mlp = wape(y_val, pred_mlp)
+w_base = wape(y[val_orig_idx], base_pred)
+print(f"WAPE MLP: {w_mlp:.2f}%")
+print(f"WAPE BASE: {w_base:.2f}%")
+
+train_end_idx = LAGS + split
+y_insample = y[:train_end_idx]
+if len(y_insample) > 12:
+    seasonality = 12
+else:
+    seasonality = 1
+m_mlp = mase(y_val, pred_mlp, y_insample, seasonality=seasonality)
+m_base = mase(y[val_orig_idx], base_pred, y_insample, seasonality=seasonality)
+
+print(f"MASE MLP: {m_mlp:.3f}")
+print(f"MASE BASE: {m_base:.3f}")
+
+
+use_mlp = w_mlp <= w_base
+print("Selected:", "MLP" if use_mlp else "SEASONAL_NAIVE")
+
+# now train MLP on full dataset for final forecast if selected
+if use_mlp:
+    model.fit(X_train, np.log1p(y_train))
+    MODEL_VERSION = "mlp_lag6_log1p_v4"
+else:
+    MODEL_VERSION = "seasonal_naive_lag12_v1"
+
 
 
 history = list(y.astype(float))
@@ -133,13 +196,12 @@ for step in range(1, 13):
     lags = np.array(history[-LAGS:][::-1], dtype=float)
     x = np.concatenate([lags, [sin_m, cos_m]]).reshape(1, -1)
 
-    if score < 0:
-        # fallback: seasonal naive (same month last year)
-        pred = float(history[-12]) if len(history) >= 12 else float(history[-1])
-    else:
+    if use_mlp:
         pred_log = float(model.predict(x)[0])
         pred = float(np.expm1(pred_log))
         pred = max(pred, 0.0)
+    else:
+        pred = float(history[-12]) if len(history) >= 12 else float(history[-1])
 
     history.append(pred)
     forecast_rows.append((future_date.strftime('%Y-%m-%d'), int(round(pred))))
@@ -153,7 +215,11 @@ lag6 — used 6 lags,
 log1p — The target was log-converted,
 v1 — first version.
 '''
-MODEL_VERSION = 'mlp_lag6_log1p_v2'
+if use_mlp:
+    MODEL_VERSION = "mlp_lag6_log1p_v4"
+else:
+    MODEL_VERSION = "seasonal_naive_lag12_v1"
+
 
 
 # clean previous forecast for the product
