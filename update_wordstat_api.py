@@ -49,16 +49,6 @@ def load_env():
         env[k.strip()] = v.strip()
     return env
 
-
-
-def parse_regions(raw_value):
-    raw_value = raw_value.strip().lower()
-    if raw_value == "all":
-        return []
-    return [int(x.strip()) for x in raw_value.split(",") if x.strip()]
-
-
-
 def add_months(d, delta):
     #d.month - 1 to make January = 0, for instance
     #delta on how many months we need to shift
@@ -112,14 +102,11 @@ def wordstat_post(endpoint, token, payload):
 
 
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
-def build_top_payload_from_api(token, phrase, regions_raw):
-    regions = parse_regions(regions_raw)
+def build_top_payload_from_api(token, phrase):
     #phrase = product, key phrase; numphrases = number of top req.; devies = desktop + mobile(we can delete this feature)
     body = {"phrase": phrase,
             "numPhrases": 2000,
             "devices": ["all"]}
-    if regions:
-        body["regions"] = regions
 
     #data - python dict(API answer) from which we get top requests and frequency for ClickHouse
     data = wordstat_post("/v1/topRequests", token, body)
@@ -136,8 +123,7 @@ def build_top_payload_from_api(token, phrase, regions_raw):
     payload = "\n".join(rows) + ("\n" if rows else "")
     return payload, len(rows)
 
-def build_dynamic_payload_from_api(token, phrase, regions_raw, n_months=24):
-    regions = parse_regions(regions_raw)
+def build_dynamic_payload_from_api(token, phrase, n_months=24):
     from_date, to_date = get_last_n_month_range(n_months)
 
     body = {
@@ -147,8 +133,6 @@ def build_dynamic_payload_from_api(token, phrase, regions_raw, n_months=24):
         "toDate": to_date,
         "devices": ["all"],
     }
-    if regions:
-        body["regions"] = regions
 
     data = wordstat_post("/v1/dynamics", token, body)
     meta = f"source=wordstat_api;phrase={phrase}"
@@ -223,10 +207,9 @@ def main():
 
     token = env["WORDSTAT_TOKEN"]
     phrase = args.product
-    regions_raw = env.get("WORDSTAT_REGION", "all")
 
-    payload_top, n_top = build_top_payload_from_api(token, phrase, regions_raw)
-    payload_dyn, n_dyn = build_dynamic_payload_from_api(token, phrase, regions_raw, n_months=args.n_months)
+    payload_top, n_top = build_top_payload_from_api(token, phrase)
+    payload_dyn, n_dyn = build_dynamic_payload_from_api(token, phrase, n_months=args.n_months)
 
     # 1) Product-specific storage
     ensure_product_top_table()

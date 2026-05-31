@@ -79,9 +79,7 @@ class JobStatusResponse(BaseModel):
     logs: Optional[str] = None
 
 
-# -----------------------------
 # Helpers
-# -----------------------------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -173,9 +171,7 @@ def run_pipeline(job_id: str, product: str, n_months: int) -> None:
         )
 
 
-# -----------------------------
 # API
-# -----------------------------
 @app.get("/api/health")
 def health():
     try:
@@ -258,17 +254,22 @@ def ui():
     body {{ font-family: sans-serif; margin: 16px; }}
     .row {{ display: flex; gap: 8px; margin-bottom: 12px; }}
     input, button {{ padding: 8px; font-size: 14px; }}
+    #product {{ width: 420px; }}
+    #months {{ width: 90px; }}
     #status {{ margin: 8px 0; white-space: pre-wrap; }}
-    iframe {{ width: 100%; height: 75vh; border: 1px solid #ccc; }}
+    iframe {{ width: 100%; height: 78vh; border: 1px solid #ccc; }}
   </style>
 </head>
 <body>
   <h2>Wordstat: Any Product</h2>
+
   <div class="row">
-    <input id="product" placeholder="Type any product (e.g. ноутбук игровой)" style="width:420px;" />
-    <input id="months" type="number" min="12" max="60" value="24" style="width:90px;" />
+    <input id="product" placeholder="Type any product (e.g. ноутбук игровой)" />
+    <input id="months" type="number" min="12" max="60" value="24" />
     <button onclick="startAnalyze()">Analyze</button>
+    <button onclick="reloadDashboard()">Reload dashboard</button>
   </div>
+
   <div id="status">Idle</div>
 
   <iframe id="dash" src="{DASHBOARD_URL}"></iframe>
@@ -279,18 +280,22 @@ let pollTimer = null;
 async function startAnalyze() {{
   const product = document.getElementById('product').value.trim();
   const n_months = Number(document.getElementById('months').value || 24);
+
   if (!product) {{
     setStatus('Please type product name');
     return;
   }}
 
   setStatus('Submitting job...');
+
   const r = await fetch('/api/analyze', {{
     method: 'POST',
     headers: {{ 'Content-Type': 'application/json' }},
     body: JSON.stringify({{ product, n_months }})
   }});
+
   const data = await r.json();
+
   if (!r.ok) {{
     setStatus('Error: ' + JSON.stringify(data));
     return;
@@ -308,26 +313,32 @@ async function pollJob(jobId, product) {{
     const j = await r.json();
 
     setStatus(
-      `Product: ${{j.product}}\\n` +
-      `Status: ${{j.status}}\\n` +
-      `Created: ${{j.created_at}}\\n` +
-      (j.started_at ? `Started: ${{j.started_at}}\\n` : '') +
-      (j.finished_at ? `Finished: ${{j.finished_at}}\\n` : '') +
-      (j.error ? `Error:\\n${{j.error}}\\n` : '')
+      `Product: ${{j.product}}\n` +
+      `Status: ${{j.status}}\n` +
+      `Created: ${{j.created_at}}\n` +
+      (j.started_at ? `Started: ${{j.started_at}}\n` : '') +
+      (j.finished_at ? `Finished: ${{j.finished_at}}\n` : '') +
+      (j.error ? `Error:\n${{j.error}}\n` : '')
     );
 
     if (j.status === 'done') {{
       clearInterval(pollTimer);
-      // reload dashboard iframe after data prepared
-      const iframe = document.getElementById('dash');
-      iframe.src = iframe.src.split('?')[0] + '?t=' + Date.now();
-      setStatus(`Done for "${{product}}". Dashboard refreshed.`);
+      reloadDashboard();
+      setStatus(
+        `Done for "${{product}}". Dashboard refreshed.\n` +
+        `Now select product = "${{product}}" in the product filter.`
+      );
     }}
 
     if (j.status === 'failed') {{
       clearInterval(pollTimer);
     }}
   }}, 2500);
+}}
+
+function reloadDashboard() {{
+  const iframe = document.getElementById('dash');
+  iframe.src = iframe.src.split('?')[0] + '?t=' + Date.now();
 }}
 
 function setStatus(txt) {{
@@ -338,3 +349,4 @@ function setStatus(txt) {{
 </html>
 """
     return HTMLResponse(html)
+
