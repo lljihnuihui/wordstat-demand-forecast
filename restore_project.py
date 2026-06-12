@@ -223,7 +223,10 @@ def main():
     print("\nDONE")
     print("Open DataLens:")
     print("http://localhost:8080")
-    print("Then refresh the dashboard and select product = смартфон")
+    print("Then refresh the dashboard and select product")
+    print("To open FastAPI web interface insert this in terminal in your project folder:")
+    print("/opt/miniconda3/envs/wordstat/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8090")
+    print("http://localhost:8090")
 
 
 if __name__ == "__main__":
