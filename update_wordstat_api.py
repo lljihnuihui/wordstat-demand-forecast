@@ -14,7 +14,10 @@ import argparse
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
-WORDSTAT_BASE_URL = "https://api.wordstat.yandex.net"
+DEFAULT_WORDSTAT_BASE_URL = "https://searchapi.api.cloud.yandex.net"
+WORDSTAT_TOP_ENDPOINT = "/v2/wordstat/topRequests"
+WORDSTAT_DYNAMICS_ENDPOINT = "/v2/wordstat/dynamics"
+WORDSTAT_PERIOD_MONTH = 1
 log_file = BASE_DIR / "update_wordstat.log"
 
 #add string in the log file to see when did our scrip start and stop
@@ -72,33 +75,36 @@ def get_last_n_month_range(n_months=24):
     return from_date.isoformat(), to_date.isoformat()
 
 '''
-Takes the endpoint (for example /v1/topRequests),
-Takes the token (OAuth),
-Takes the payload (request parameters),
-Sends an HTTP POST with JSON,
-Returns the API response as a Python dictionary (dict).
+Send a POST request to the current Yandex Search API Wordstat endpoint.
+Arguments:
+endpoint: API endpoint, for example /v2/wordstat/topRequests.
+api_key: Yandex Cloud API key from .env.
+payload: JSON request body with phrase, dates and optional folder_id.
+base_url: base API URL, usually https://searchapi.api.cloud.yandex.net.
+
+Returns API response parsed as a Python dictionary.
 '''
-def wordstat_post(endpoint, token, payload):
-    #https://docs.python.org/3/library/urllib.request.html#urllib.request.Request
+def wordstat_post(endpoint, api_key, payload, base_url):
     req = urllib.request.Request(
-        url=f"{WORDSTAT_BASE_URL}{endpoint}",
-        data=json.dumps(payload).encode("utf-8"),
+        url=f"{base_url.rstrip('/')}{endpoint}",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Api-Key {api_key}",
             "Content-Type": "application/json;charset=utf-8",
         },
         method="POST",
     )
     try:
         ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-        with urllib.request.urlopen(req, timeout=60, context=ssl_ctx) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-
-    #urllib.error (Python module, in urllib.error — Exception classes raised by urllib.request)
+        with urllib.request.urlopen(req, timeout=90, context=ssl_ctx) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Wordstat API HTTP {e.code}: {body}") from e
+        raise RuntimeError(f"Yandex Search API HTTP {e.code}: {body}") from e
+
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Yandex Search API connection failed: {e}") from e
 
 
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
