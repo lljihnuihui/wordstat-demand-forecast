@@ -69,8 +69,10 @@ def get_last_n_month_range(n_months=24):
     #let it be 2026-02-26, then last_month_start = 2026-01-01, n_month = 24 --> -(n_months - 1) = -23
     #from_date = add_months(date(2026, 1, 1), -23) -> 2024-02-01 which is exactly 24 months
     from_date = add_months(last_month_start, -(n_months - 1))
-    to_date = last_day_prev_month
-    return from_date.isoformat(), to_date.isoformat()
+    return from_date, last_day_prev_month
+
+def api_timestamp(d):
+    return f"{d.isoformat()}T00:00:00Z"
 
 '''
 Send a POST request to the current Yandex Search API Wordstat endpoint.
