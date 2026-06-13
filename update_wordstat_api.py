@@ -106,6 +106,8 @@ def wordstat_post(endpoint, api_key, payload, base_url):
     except urllib.error.URLError as e:
         raise RuntimeError(f"Yandex Search API connection failed: {e}") from e
 
+# Helper functions for parsing API responses.
+# They make the loader more stable if Yandex changes field names slightly.
 def find_lists(obj):
     if isinstance(obj, list):
         yield obj
@@ -129,6 +131,27 @@ def to_int(value, default=0):
     if isinstance(value, (int, float)):
         return int(value)
     return int(str(value).replace(" ", "").replace("\u00a0", "").replace("\u202f", "").strip())
+
+def to_float(value, default=0.0):
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    return float(str(value).replace(" ", "").replace("\u00a0", "").replace("\u202f", "").replace(",", ".").strip())
+
+
+def normalize_month_date(value):
+    if isinstance(value, dict):
+        year = pick_value(value, ["year", "Year"])
+        month = pick_value(value, ["month", "Month"])
+        if year and month:
+            return date(int(year), int(month), 1).isoformat()
+    raw = str(value).strip()
+    if not raw:
+        return ""
+    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+        return raw[:10]
+    return raw
 
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
 def build_top_payload_from_api(token, phrase):
