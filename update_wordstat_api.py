@@ -214,30 +214,37 @@ def build_top_payload_from_api(api_key, phrase, base_url, folder_id=None):
 
     return "\n".join(rows) + "\n", len(rows)
 
-def build_dynamic_payload_from_api(token, phrase, n_months=24):
+#Request monthly demand dynamics for the selected product and convert API rows
+#to the ClickHouse TSV format used by product_monthly_actual.
+def build_dynamic_payload_from_api(api_key, phrase, n_months=24, base_url=DEFAULT_WORDSTAT_BASE_URL, folder_id=None):
     from_date, to_date = get_last_n_month_range(n_months)
 
     body = {
         "phrase": phrase,
-        "period": "monthly",
-        "fromDate": from_date,
-        "toDate": to_date,
-        "devices": ["all"],
+        "period": WORDSTAT_PERIOD_MONTH,
+        "from_date": api_timestamp(from_date),
+        "to_date": api_timestamp(to_date),
     }
+    if folder_id:
+        body["folder_id"] = folder_id
 
-    data = wordstat_post("/v1/dynamics", token, body)
-    meta = f"source=wordstat_api;phrase={phrase}"
+    data = wordstat_post(WORDSTAT_DYNAMICS_ENDPOINT, api_key, body, base_url)
+    meta = f"source=yandex_search_api;phrase={phrase}"
 
     rows = []
-    for item in data.get("dynamics", []):
-        month_date = str(item.get("date", "")).strip()
-        cnt = int(item.get("count", 0))
-        share = float(item.get("share", 0.0))
+    for item in extract_dynamic_items(data):
+        if not isinstance(item, dict):
+            continue
+        month_date = normalize_month_date(pick_value(item, ["date", "period", "month", "from_date", "fromDate"]))
+        cnt = to_int(pick_value(item, ["count", "requests", "shows", "number_of_queries", "numberOfQueries", "absolute", "absolute_value", "absoluteValue", "value"]))
+        share = to_float(pick_value(item, ["share", "share_pct", "sharePct", "relative", "relative_value", "relativeValue"]), 0.0)
         if month_date:
             rows.append(f"{month_date}\t{cnt}\t{share}\t{meta}")
 
-    payload = "\n".join(rows) + ("\n" if rows else "")
-    return payload, len(rows)
+    if not rows:
+        raise RuntimeError(f"Yandex Search API returned no dynamics. Response keys: {list(data) if isinstance(data, dict) else type(data)}")
+
+    return "\n".join(rows) + "\n", len(rows)
 
 #because '' in SQL is '
 def sql_quote(value):
