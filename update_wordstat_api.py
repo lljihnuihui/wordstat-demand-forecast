@@ -1,7 +1,5 @@
 from datetime import datetime, date, timedelta
 from pathlib import Path
-import csv
-import io
 import shutil #to find the path to the clickhouse executable file in the system.
 import subprocess
 import json
@@ -117,7 +115,12 @@ def find_lists(obj):
         for value in obj.values():
             yield from find_lists(value)
 
-
+def get_env_required(env, name):
+    value = env.get(name)
+    if not value:
+        raise RuntimeError(f"Missing {name} in {ENV_FILE}")
+    return value
+    
 def pick_value(item, names):
     for name in names:
         if name in item and item[name] not in (None, ""):
@@ -185,11 +188,11 @@ def extract_dynamic_items(data):
                 return values
     return []
 
-#https://yandex.ru/support2/wordstat/ru/content/api-structure
+#https://aistudio.yandex.ru/docs/ru/search-api/concepts/wordstat.html
 #Request top related queries for the selected product and convert them to TSV
 #for insertion into ClickHouse.
 def build_top_payload_from_api(api_key, phrase, base_url, folder_id=None):
-    #phrase = product, key phrase; numphrases = number of top req.; devies = desktop + mobile(we can delete this feature)
+    #phrase = product, key phrase; numphrases = number of top req.
     body = {"phrase": phrase, 
             "num_phrases": 2000}
     if folder_id:
@@ -275,13 +278,11 @@ def build_product_top_payload(product, payload_top_raw):
     rows = []
     for line in payload_top_raw.splitlines():
         line = line.strip()
-        if not line:
-            continue
-        rows.append(f"{product}\t{line}")
-    payload = "\n".join(rows) + ("\n" if rows else "")
-    return payload, len(rows)
+        if line:
+            rows.append(f"{product}\t{line}")
+    return "\n".join(rows) + ("\n" if rows else ""), len(rows)
 
-def build_product_actual_payload(product: str, payload_dyn_raw: str):
+def build_product_actual_payload(product, payload_dyn_raw):
     #from raw-payload "month_date\trequests\tshare\tmeta" make "product\tmonth_date\trequests\tshare"
     rows = []
     for line in payload_dyn_raw.splitlines():
@@ -290,12 +291,11 @@ def build_product_actual_payload(product: str, payload_dyn_raw: str):
             continue
         month_date, cnt, share, _meta = line.split("\t", 3)
         rows.append(f"{product}\t{month_date}\t{cnt}\t{share}")
-    payload = "\n".join(rows) + ("\n" if rows else "")
-    return payload, len(rows)
+    return "\n".join(rows) + ("\n" if rows else ""), len(rows)
 
 def main():
     #input in terminal months and product
-    parser = argparse.ArgumentParser(description='Load product data from Wordstat API into ClickHouse')
+    parser = argparse.ArgumentParser(description='Load product data from Yandex Search API Wordstat into ClickHouse')
     parser.add_argument("--product", default=None)
     parser.add_argument("--n-months", type=int, default=24)
     args = parser.parse_args()
@@ -303,21 +303,18 @@ def main():
     log("update started")
     env = load_env()
 
-    def get_env_required(env, name):
-    value = env.get(name)
-    if not value:
-        raise RuntimeError(f"Missing {name} in {ENV_FILE}")
-    return value
-    
+    api_key = get_env_required(env, "YANDEX_SEARCH_API_KEY")
+    base_url = env.get("WORDSTAT_BASE_URL", DEFAULT_WORDSTAT_BASE_URL)
+    folder_id = env.get("YANDEX_FOLDER_ID") or env.get("YC_FOLDER_ID")
     phrase = args.product
 
-    payload_top, n_top = build_top_payload_from_api(token, phrase)
-    payload_dyn, n_dyn = build_dynamic_payload_from_api(token, phrase, n_months=args.n_months)
+    payload_top, n_top = build_top_payload_from_api(api_key, phrase, base_url, folder_id=folder_id)
+    payload_dyn, n_dyn = build_dynamic_payload_from_api(api_key, phrase, n_months=args.n_months, base_url=base_url, folder_id=folder_id)
 
     # 1) Product-specific storage
     ensure_product_top_table()
-    payload_product_top, n_top_product = build_product_top_payload(phrase, payload_top)
-    payload_product_actual, n_actual_product = build_product_actual_payload(phrase, payload_dyn)
+    payload_product_top, _ = build_product_top_payload(phrase, payload_top)
+    payload_product_actual, _ = build_product_actual_payload(phrase, payload_dyn)
 
     phrase_sql = sql_quote(phrase)
     run_clickhouse_query(
