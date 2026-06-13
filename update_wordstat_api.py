@@ -26,15 +26,15 @@ def log(message):
     with log_file.open("a", encoding="utf-8") as f:
         f.write(f"[{now}] {message}\n")
 
-def run_clickhouse_query(query, payload = None):
-    ch = shutil.which('clickhouse')
+def run_clickhouse_query(query, payload=None):
+    ch = shutil.which("clickhouse")
+    if ch is None:
+        raise RuntimeError("clickhouse client was not found in PATH")
 
-    #build an array with arguments to launch comands in temrminal
-    cmd = [ch, 'client', '--query', query]
     subprocess.run(
-        cmd,
-        input = payload.encode("utf-8") if payload is not None else None,
-        check = True #if error erises we will see an error and not just silent breakdown
+        [ch, "client", "--query", query],
+        input=payload.encode("utf-8") if payload is not None else None,
+        check=True, # If clickhouse client is missing or the query fails, the script stops with an error.
     )
 
 #read .env file and transform it into python dictionary
@@ -44,9 +44,7 @@ def load_env():
     text = ENV_FILE.read_text(encoding="utf-8-sig")
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
+        if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
         env[k.strip()] = v.strip()
@@ -211,7 +209,12 @@ def main():
     log("update started")
     env = load_env()
 
-    token = env["WORDSTAT_TOKEN"]
+    def get_env_required(env, name):
+    value = env.get(name)
+    if not value:
+        raise RuntimeError(f"Missing {name} in {ENV_FILE}")
+    return value
+    
     phrase = args.product
 
     payload_top, n_top = build_top_payload_from_api(token, phrase)
