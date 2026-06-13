@@ -152,6 +152,23 @@ def normalize_month_date(value):
     if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
         return raw[:10]
     return raw
+    
+#Find the list of related search queries in the API response.
+#Supports several possible response field names.
+def extract_top_items(data):
+    preferred = ["top_requests", "topRequests", "phrases", "items", "requests", "queries", "data"]
+    if isinstance(data, dict):
+        for key in preferred:
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+
+    for values in find_lists(data):
+        if values and isinstance(values[0], dict):
+            sample = values[0]
+            if pick_value(sample, ["phrase", "text", "query", "request"]) is not None:
+                return values
+    return []
 
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
 def build_top_payload_from_api(token, phrase):
