@@ -170,27 +170,49 @@ def extract_top_items(data):
                 return values
     return []
 
+def extract_dynamic_items(data):
+    preferred = ["dynamics", "dynamic", "items", "points", "data", "time_series", "timeSeries"]
+    if isinstance(data, dict):
+        for key in preferred:
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+
+    for values in find_lists(data):
+        if values and isinstance(values[0], dict):
+            sample = values[0]
+            if pick_value(sample, ["date", "period", "month", "from_date", "fromDate"]) is not None:
+                return values
+    return []
+
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
-def build_top_payload_from_api(token, phrase):
+#Request top related queries for the selected product and convert them to TSV
+#for insertion into ClickHouse.
+def build_top_payload_from_api(api_key, phrase, base_url, folder_id=None):
     #phrase = product, key phrase; numphrases = number of top req.; devies = desktop + mobile(we can delete this feature)
-    body = {"phrase": phrase,
-            "numPhrases": 2000,
-            "devices": ["all"]}
+    body = {"phrase": phrase, 
+            "num_phrases": 2000}
+    if folder_id:
+        body["folder_id"] = folder_id
 
     #data - python dict(API answer) from which we get top requests and frequency for ClickHouse
-    data = wordstat_post("/v1/topRequests", token, body)
+    data = wordstat_post(WORDSTAT_TOP_ENDPOINT, api_key, body, base_url)
     #meta to understand where did we get data
-    meta = f"source=wordstat_api;phrase={phrase}"
+    meta = f"source=yandex_search_api;phrase={phrase}"
 
     rows = []
-    for item in data.get("topRequests", []):
-        q = str(item.get("phrase", "")).strip()
-        cnt = int(item.get("count", 0))
+    for item in extract_top_items(data):
+        if not isinstance(item, dict):
+            continue
+        q = str(pick_value(item, ["phrase", "text", "query", "request"]) or "").strip()
+        cnt = to_int(pick_value(item, ["count", "requests", "shows", "number_of_queries", "numberOfQueries", "value"]))
         if q:
             rows.append(f"{q}\t{cnt}\t{meta}")
 
-    payload = "\n".join(rows) + ("\n" if rows else "")
-    return payload, len(rows)
+    if not rows:
+        raise RuntimeError(f"Yandex Search API returned no top requests. Response keys: {list(data) if isinstance(data, dict) else type(data)}")
+
+    return "\n".join(rows) + "\n", len(rows)
 
 def build_dynamic_payload_from_api(token, phrase, n_months=24):
     from_date, to_date = get_last_n_month_range(n_months)
