@@ -106,6 +106,29 @@ def wordstat_post(endpoint, api_key, payload, base_url):
     except urllib.error.URLError as e:
         raise RuntimeError(f"Yandex Search API connection failed: {e}") from e
 
+def find_lists(obj):
+    if isinstance(obj, list):
+        yield obj
+        for item in obj:
+            yield from find_lists(item)
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            yield from find_lists(value)
+
+
+def pick_value(item, names):
+    for name in names:
+        if name in item and item[name] not in (None, ""):
+            return item[name]
+    return None
+
+
+def to_int(value, default=0):
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    return int(str(value).replace(" ", "").replace("\u00a0", "").replace("\u202f", "").strip())
 
 #https://yandex.ru/support2/wordstat/ru/content/api-structure
 def build_top_payload_from_api(token, phrase):
