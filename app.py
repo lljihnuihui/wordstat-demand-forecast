@@ -1,8 +1,6 @@
-# app.py
 import os
 import re
 import uuid
-import json
 import threading
 import subprocess
 from datetime import datetime, timezone
@@ -15,9 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-# -----------------------------
-# Config
-# -----------------------------
+
 PROJECT_DIR = Path(
     os.getenv("WORDSTAT_PROJECT_DIR", "/Users/macbook/Desktop/wordstat_project")
 ).resolve()
@@ -26,22 +22,18 @@ PYTHON_BIN = os.getenv("WORDSTAT_PYTHON", "/opt/miniconda3/envs/wordstat/bin/pyt
 UPDATE_SCRIPT = PROJECT_DIR / "update_wordstat_api.py"
 PREDICT_SCRIPT = PROJECT_DIR / "ML_predicter.py"
 
-# Your existing DataLens dashboard URL:
 DASHBOARD_URL = os.getenv(
     "DATALENS_DASHBOARD_URL",
     "http://localhost:8080/heo0t3lru54y1-project-2nd-course",
 )
 
-MAX_WORKERS = int(os.getenv("WORDSTAT_MAX_WORKERS", "1"))  # safe default
+MAX_WORKERS = int(os.getenv("WORDSTAT_MAX_WORKERS", "1"))  
 
-# -----------------------------
-# App
-# -----------------------------
 app = FastAPI(title="Wordstat Product API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten later for production
+    allow_origins=["*"],   
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,9 +44,6 @@ jobs_lock = threading.Lock()
 jobs: Dict[str, dict] = {}
 
 
-# -----------------------------
-# Models
-# -----------------------------
 class AnalyzeRequest(BaseModel):
     product: str = Field(..., min_length=1, max_length=120, description="Any product text")
     n_months: int = Field(24, ge=12, le=60)
@@ -79,13 +68,11 @@ class JobStatusResponse(BaseModel):
     logs: Optional[str] = None
 
 
-# Helpers
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def normalize_product(value: str) -> str:
-    # Trim + collapse spaces
     value = " ".join(value.strip().split())
     # Remove dangerous control chars
     value = re.sub(r"[\x00-\x1f\x7f]", "", value)
@@ -146,7 +133,7 @@ def run_pipeline(job_id: str, product: str, n_months: int) -> None:
             job_id,
             status="done",
             finished_at=now_iso(),
-            logs="\n".join(out_parts)[-15000:],  # cap log size
+            logs="\n".join(out_parts)[-15000:], 
         )
     except subprocess.CalledProcessError as e:
         err = (
@@ -171,7 +158,6 @@ def run_pipeline(job_id: str, product: str, n_months: int) -> None:
         )
 
 
-# API
 @app.get("/api/health")
 def health():
     try:
@@ -189,7 +175,6 @@ def analyze(req: AnalyzeRequest):
     if not product:
         raise HTTPException(status_code=400, detail="Product is empty after normalization")
 
-    # Avoid duplicate running jobs for same product
     with jobs_lock:
         for jid, meta in jobs.items():
             if meta["status"] in {"queued", "running"} and meta["product"] == product:
@@ -236,12 +221,10 @@ def job_status(job_id: str):
 def list_jobs():
     with jobs_lock:
         data = list(jobs.values())
-    # newest first
     data.sort(key=lambda x: x["created_at"], reverse=True)
     return data
 
 
-# Optional simple UI so users don't handle links manually
 @app.get("/", response_class=HTMLResponse)
 def ui():
     html = f"""
@@ -251,10 +234,10 @@ def ui():
   <meta charset="utf-8" />
   <title>Wordstat Any Product</title>
   <style>
-    body {{ font-family: sans-serif; margin: 16px; }}
-    .row {{ display: flex; gap: 8px; margin-bottom: 12px; }}
+    body {{ font-family: Arial, sans-serif; margin: 16px; max-width: 1400px; }}
+    .row {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }}
     input, button {{ padding: 8px; font-size: 14px; }}
-    #product {{ width: 420px; }}
+    #product {{ flex: 1; min-width: 260px; }}
     #months {{ width: 90px; }}
     #status {{ margin: 8px 0; white-space: pre-wrap; }}
     iframe {{ width: 100%; height: 78vh; border: 1px solid #ccc; }}
